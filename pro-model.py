@@ -1,5 +1,11 @@
+from tqdm import tqdm
+from typing import *
 import torch
-import torch.nn as nn
+from torch import nn
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim import Adam
 
 # adjust:
 # Layer sizes
@@ -66,27 +72,97 @@ class ProModel(nn.Module):
             return predictions
 
 
-def train_step(model, batch_x, batch_y, criterion, optimizer):
-    model.train()
-    optimizer.zero_grad()
+def train_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    epochs: int,
+    criterion: nn.Module,
+    optimizer: Optimizer,
+    scheduler: Any
+) -> List[float]:
+    """
+    Train the model and display informative progress bars for both training and validation.
 
-    outputs = model(batch_x)
-    loss = criterion(outputs, batch_y)
+    Args:
+        model (nn.Module): The neural network model to be trained.
+        train_loader (DataLoader): DataLoader for training data.
+        val_loader (DataLoader): DataLoader for validation data.
+        epochs (int): Number of epochs for training.
+        criterion (nn.Module): Loss function to optimize.
+        optimizer (Optimizer): Optimizer for model parameters.
+        scheduler (Any): Learning rate scheduler.
 
-    loss.backward()
-    optimizer.step()
+    Returns:
+        List[float]: Validation losses recorded after each epoch.
+    """
+    val_losses = []
 
-    return loss.item()
+    for epoch in range(epochs):
+        print(f"Epoch {epoch + 1}/{epochs}")
 
+        # Training Loop
+        model.train()
+        train_loss = 0.0
+        with tqdm(train_loader, desc="Training", unit="batch") as train_bar:
+            for batch_x, batch_y in train_bar:
+                optimizer.zero_grad()
+
+                # Forward pass
+                outputs = model(batch_x)
+                loss = criterion(outputs, batch_y)
+
+                # Backward pass and optimization
+                loss.backward()
+                optimizer.step()
+
+                # Track the loss
+                train_loss += loss.item()
+                train_bar.set_postfix(loss=loss.item())
+
+        # Validation Loop
+        model.eval()
+        val_loss = 0.0
+        with tqdm(val_loader, desc="Validating", unit="batch") as val_bar:
+            with torch.no_grad():
+                for val_x, val_y in val_bar:
+                    outputs = model(val_x)
+                    loss = criterion(outputs, val_y)
+
+                    # Track the loss
+                    val_loss += loss.item()
+                    val_bar.set_postfix(loss=loss.item())
+
+        # Calculate average losses
+        train_loss /= len(train_loader)
+        val_loss /= len(val_loader)
+        val_losses.append(val_loss)
+
+        # Scheduler step
+        scheduler.step(val_loss)
+
+        # Epoch summary
+        print(f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+    return val_losses
 
 def main():
+    # Define model, criterion, optimizer, scheduler
     model = ProModel()
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
-    # Loss function and optimizer
-    criterion = nn.BCELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # Train the model
+    val_losses = train_model(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=10,
+        criterion=criterion,
+        optimizer=optimizer,
+        scheduler=scheduler
+    )
 
-    batch_x = torch.FloatTensor(your_embeddings)  # shape: (batch_size, 1280)
-    batch_y = torch.FloatTensor(your_labels)  # shape: (batch_size,)
-
-    loss = train_step(model, batch_x, batch_y, criterion, optimizer)
+    # Print validation losses
+    print("Validation losses:", val_losses)
