@@ -44,12 +44,12 @@ def generate_labels_for_sequence(sequence: str, disordered_regions: np.ndarray) 
     return labels
 
 
-def extract_protein_data_from_json(json_file: dict) -> dict:
+def prep_processed_dict(json_file: dict) -> dict:
     """
     Extracts sequences and their labeled regions from the JSON file.
     """
     filtered_data = {}
-    for sample in json_file.get('data', []):
+    for sample in json_file['data']:
         if 'alphafold_very_low_content' in sample:
             sequence = sample['sequence']
             disordered_regions = extract_disordered_regions(sample)
@@ -67,12 +67,6 @@ def write_fasta_file(data: dict, output_path: str):
             fasta_file.write(f">{acc}\n{sequence}\n{''.join(map(str, labeled_sequence))}\n")
 
 
-def prepare_model_data(data: dict) -> dict:
-    """
-    Prepares data for modeling, returning sequences and their labels as a dictionary.
-    """
-    return {acc: {'sequence': sequence, 'labels': labels} for acc, (sequence, labels) in data.items()}
-
 
 def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
     """
@@ -89,12 +83,9 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
     json_data = load_json_data(json_path)
 
     # Step 2: Extract sequences and labeled regions
-    extracted_data = extract_protein_data_from_json(json_data)
+    model_ready_data = prep_processed_dict(json_data)
 
-    # Step 3: Prepare data for modeling
-    model_ready_data = prepare_model_data(extracted_data)
-
-    # Step 4: Optionally create a FASTA file
+    # Step 3: Optionally create a FASTA file
     if output_fasta_path:
         write_fasta_file(extracted_data, output_fasta_path)
 
@@ -108,14 +99,14 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
 #     output_fasta = "C:/Users/danas/OneDrive/Desktop/pro-disorder-predictor/output.fasta"
 
 #     # Step 1: Load the JSON file
-#     json_data = load_json_file(json_path)
+#     json_data = load_json_data(json_path)
 
 #     # Step 2: Extract sequences and labeled regions
-#     extracted_data = extract_data_from_json(json_data)
+#     extracted_data = prep_processed_dict(json_data)
 
 #     # Step 3: Create a FASTA file
 #     write_fasta_file(extracted_data, output_fasta)
 
 #     # Step 4: Prepare data for modeling
-#     model_ready_data = prepare_model_data(extracted_data)
+#     model_ready_data = prep_processed_dict(json_data)
 #     print(model_ready_data['P49913'])
