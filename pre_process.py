@@ -87,7 +87,7 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
 
     # Step 3: Optionally create a FASTA file
     if output_fasta_path:
-        write_fasta_file(extracted_data, output_fasta_path)
+        write_fasta_file(model_ready_data, output_fasta_path)
 
     return model_ready_data
 
@@ -102,11 +102,9 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
 #     json_data = load_json_data(json_path)
 
 #     # Step 2: Extract sequences and labeled regions
-#     extracted_data = prep_processed_dict(json_data)
+#     model_ready_data = prep_processed_dict(json_data)
 
 #     # Step 3: Create a FASTA file
-#     write_fasta_file(extracted_data, output_fasta)
+#     write_fasta_file(model_ready_data, output_fasta)
 
-#     # Step 4: Prepare data for modeling
-#     model_ready_data = prep_processed_dict(json_data)
 #     print(model_ready_data['P49913'])
