@@ -1,5 +1,6 @@
 from typing import Tuple, List
-
+from embed import *
+from plotting import *
 from tqdm import tqdm
 from typing import *
 import torch
@@ -10,8 +11,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim import Adam
 from sklearn.model_selection import train_test_split
 import numpy as np
-import plotly.graph_objects as go
-
+import optuna
+from copy import deepcopy
 
 
 class AminoAcidDataset(Dataset):
@@ -53,8 +54,32 @@ class AminoAcidDataset(Dataset):
         }
 
 
-def create_stratified_dataloaders(data_list, batch_size=32, train_ratio=0.7, val_ratio=0.15,
-                                  test_ratio=0.15, random_state=42):
+class ModelCheckpoint:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.best_val_loss = float('inf')
+        self.best_model = None
+
+    def update(self, model, val_loss):
+        """Update the best model if current validation loss is better."""
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            self.best_model = deepcopy(model.state_dict())
+            torch.save({
+                'model_state_dict': self.best_model,
+                'val_loss': self.best_val_loss
+            }, self.filepath)
+            return True
+        return False
+
+    def load_best_model(self, model):
+        """Load the best model weights into the provided model."""
+        checkpoint = torch.load(self.filepath)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        return model
+
+def create_stratified_dataloaders(data_list, batch_size=32, train_ratio=0.65, val_ratio=0.15,
+                                  test_ratio=0.2, random_state=42):
     """
     Create stratified train/validation/test DataLoaders.
 
@@ -120,64 +145,40 @@ def create_stratified_dataloaders(data_list, batch_size=32, train_ratio=0.7, val
     return train_loader, val_loader, test_loader
 
 
+# Updated ProModel class with configurable layer sizes
 class ProModel(nn.Module):
-    def __init__(self, embedding_dim=1280, dropout=0.2):
+    def __init__(self, embedding_dim=1280, dropout=0.2, hidden_dims=[512, 256, 64]):
         super(ProModel, self).__init__()
 
-        # First dense layer
-        self._dense1 = nn.Linear(embedding_dim, 512)
-        self._batch_norm1 = nn.BatchNorm1d(512)
+        layers = []
+        current_dim = embedding_dim
 
-        # Second dense layer
-        self._dense2 = nn.Linear(512, 256)
-        self._batch_norm2 = nn.BatchNorm1d(256)
+        # Create hidden layers
+        for hidden_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(current_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ])
+            current_dim = hidden_dim
 
-        # Third dense layer
-        self._dense3 = nn.Linear(256, 64)
-        self._batch_norm3 = nn.BatchNorm1d(64)
+        # Create layer sequence
+        self.hidden_layers = nn.Sequential(*layers)
 
         # Output layer
-        self._dense4 = nn.Linear(64, 1)
-
-        # Activation functions and dropout
-        self._relu = nn.ReLU()
-        self._dropout = nn.Dropout(dropout)
-        self._sigmoid = nn.Sigmoid()
+        self.output_layer = nn.Sequential(
+            nn.Linear(hidden_dims[-1], 1),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
-        # x shape: (batch_size, embedding_dim)
-
-        # First dense block
-        x = self._dense1(x)
-        x = self._batch_norm1(x)
-        x = self._relu(x)
-        x = self._dropout(x)
-
-        # Second dense block
-        x = self._dense2(x)
-        x = self._batch_norm2(x)
-        x = self._relu(x)
-        x = self._dropout(x)
-
-        # Third dense block
-        x = self._dense3(x)
-        x = self._batch_norm3(x)
-        x = self._relu(x)
-        x = self._dropout(x)
-
-        # Output layer
-        x = self._dense4(x)
-        x = self._sigmoid(x)
-
+        x = self.hidden_layers(x)
+        x = self.output_layer(x)
         return x.squeeze(-1)
 
-    def predict(self, x, threshold=0.5):
-        with torch.no_grad():
-            outputs = self.forward(x)
-            predictions = (outputs > threshold).float()
-            return predictions
 
-
+# Updated training function to use model checkpoint
 def train_model(
         model: nn.Module,
         train_loader: DataLoader,
@@ -185,68 +186,45 @@ def train_model(
         epochs: int,
         criterion: nn.Module,
         optimizer: Optimizer,
-        scheduler: Any
-) -> tuple[list[float], list[float]]:
-    """
-    Train the model and display informative progress bars for both training and validation.
-
-    Args:
-        model (nn.Module): The neural network model to be trained.
-        train_loader (DataLoader): DataLoader for training data.
-        val_loader (DataLoader): DataLoader for validation data.
-        epochs (int): Number of epochs for training.
-        criterion (nn.Module): Loss function to optimize.
-        optimizer (Optimizer): Optimizer for model parameters.
-        scheduler (Any): Learning rate scheduler.
-
-    Returns:
-        List[float]: Validation losses recorded after each epoch.
-    """
+        scheduler: Any,
+        checkpoint: ModelCheckpoint = None
+) -> Tuple[List[float], List[float]]:
     val_losses = []
     train_losses = []
 
-    for epoch in range(epochs):
-        print(f"Epoch {epoch + 1}/{epochs}")
+    epoch_bar = tqdm(total=epochs, desc="Epoches", unit="epoch", colour='blue', position=0)
 
+    for epoch in range(epochs):
         # Training Loop
         model.train()
         train_loss = 0.0
-        with tqdm(train_loader, desc="Training", unit="batch", colour='blue') as train_bar:
-            for batch in train_bar:
-                optimizer.zero_grad()
+        for batch in train_loader:
+            optimizer.zero_grad()
 
-                # Extract features and labels from batch dictionary
-                batch_x = batch["embedding"]
-                batch_y = batch["label"]
+            batch_x = batch["embedding"]
+            batch_y = batch["label"]
 
-                # Forward pass
-                outputs = model(batch_x)
-                loss = criterion(outputs.float(), batch_y.float())
+            outputs = model(batch_x)
+            loss = criterion(outputs.float(), batch_y.float())
 
-                # Backward pass and optimization
-                loss.backward()
-                optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-                # Track the loss
-                train_loss += loss.item()
-                train_bar.set_postfix(loss=loss.item())
+            train_loss += loss.item()
 
         # Validation Loop
         model.eval()
         val_loss = 0.0
-        with tqdm(val_loader, desc="Validating", unit="batch", colour='green') as val_bar:
-            with torch.no_grad():
-                for batch in val_bar:
-                    # Extract features and labels from batch dictionary
-                    val_x = batch["embedding"]
-                    val_y = batch["label"]
 
-                    outputs = model(val_x)
-                    loss = criterion(outputs.float(), val_y.float())
+        with torch.no_grad():
+            for batch in val_loader:
+                val_x = batch["embedding"]
+                val_y = batch["label"]
 
-                    # Track the loss
-                    val_loss += loss.item()
-                    val_bar.set_postfix(loss=loss.item())
+                outputs = model(val_x)
+                loss = criterion(outputs.float(), val_y.float())
+
+                val_loss += loss.item()
 
         # Calculate average losses
         train_loss /= len(train_loader)
@@ -254,103 +232,117 @@ def train_model(
         val_losses.append(val_loss)
         train_losses.append(train_loss)
 
+        # Update model checkpoint
+        if checkpoint is not None:
+            is_best = checkpoint.update(model, val_loss)
+            if is_best:
+                print(f"\nNew best model saved! (val_loss: {val_loss:.4f})")
+
         # Scheduler step
         scheduler.step(val_loss)
+        epoch_bar.set_postfix({
+            'train_loss': f'{train_loss:.4f}',
+            'val_loss': f'{val_loss:.4f}'
+        })
 
-        # Epoch summary
-        print(f"\nTrain Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+        # Update epoch progress
+        epoch_bar.update()
+
+    epoch_bar.close()
 
     return val_losses, train_losses
 
 
-def plot_losses(train_losses, val_losses):
-    epochs = np.arange(1, len(train_losses) + 1)
+def objective(trial, data, epochs=10, batch_size=32):
+    """
+    Optuna objective function for hyperparameter optimization.
 
-    fig = go.Figure()
+    Args:
+        trial: Optuna trial object
+        data: Training data
+        epochs: Number of epochs
+        batch_size: Batch size
+    """
+    # Define hyperparameter search space
+    lr = trial.suggest_float('lr', 1e-5, 1e-2, log=True)
+    dropout = trial.suggest_float('dropout', 0.1, 0.5)
+    weight_decay = trial.suggest_float('weight_decay', 1e-5, 1e-3, log=True)
+    hidden_dims = [
+        trial.suggest_int('hidden_dim1', 128, 512, step=64),
+        trial.suggest_int('hidden_dim2', 64, 256, step=32),
+        trial.suggest_int('hidden_dim3', 32, 128, step=16),
+    ]
 
-    # Add training loss trace
-    fig.add_trace(go.Scatter(
-        x=epochs,
-        y=train_losses,
-        mode='lines+markers',
-        name='Training Loss',
-        line=dict(color='royalblue', width=2),
-        marker=dict(size=8, symbol='circle', color='royalblue')
-    ))
+    # Create model and training components
+    model = ProModel(embedding_dim=1280, dropout=dropout, hidden_dims=hidden_dims)
+    criterion = nn.BCELoss()
+    optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
-    # Add validation loss trace
-    fig.add_trace(go.Scatter(
-        x=epochs,
-        y=val_losses,
-        mode='lines+markers',
-        name='Validation Loss',
-        line=dict(color='firebrick', width=2, dash='dash'),
-        marker=dict(size=8, symbol='square', color='firebrick')
-    ))
-
-    # Customize layout for beauty
-    fig.update_layout(
-        title='Training and Validation Loss Over Epochs',
-        title_font=dict(size=24, color='darkslategray'),
-        xaxis=dict(
-            title='Epochs',
-            title_font=dict(size=18, color='darkslategray'),
-            tickfont=dict(size=14, color='gray'),
-            gridcolor='lightgray'
-        ),
-        yaxis=dict(
-            title='Loss',
-            title_font=dict(size=18, color='darkslategray'),
-            tickfont=dict(size=14, color='gray'),
-            gridcolor='lightgray'
-        ),
-        legend=dict(
-            font=dict(size=14),
-            bordercolor='lightgray',
-            borderwidth=1
-        ),
-        template='plotly_white',
-        hovermode='x unified'
+    # Create dataloaders
+    train_loader, val_loader, _ = create_stratified_dataloaders(
+        data, batch_size=batch_size
     )
 
-    # Add annotations for the lowest validation loss
-    min_val_loss = min(val_losses)
-    min_epoch = epochs[np.argmin(val_losses)]
-    fig.add_annotation(
-        x=min_epoch,
-        y=min_val_loss,
-        text=f"Min Val Loss: {min_val_loss:.4f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowsize=1,
-        arrowcolor='firebrick',
-        font=dict(size=12, color='firebrick'),
-        ax=20,
-        ay=-30
+    # Train model
+    val_losses, _ = train_model(
+        model, train_loader, val_loader, epochs,
+        criterion, optimizer, scheduler
     )
 
-    # Show the figure
-    fig.show()
+    return min(val_losses)  # Return best validation loss
 
 
+def tune_hyperparameters(data, n_trials=100):
+    """
+    Tune hyperparameters using Optuna.
 
+    Args:
+        data: Training data
+        n_trials: Number of optimization trials
+    """
+    study = optuna.create_study(direction='minimize')
+    study.optimize(lambda trial: objective(trial, data), n_trials=n_trials)
 
+    print("\n*** Hyperparameter Tuning Results ***")
+    print("\tBest trial:")
+    trial = study.best_trial
+    print(f"  Value: {trial.value}")
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
 
+    return trial.params
 
 
 def main():
-    data = torch.load('embeddings_cpu.pt')
+    # embed_data('DisProt_release_2024_12_Consensus_without_includes.json', 'embeddings_overnight.pt')
+    data = torch.load('embeddings_overnight.pt')
+    # cpu_data = torch.load('embeddings_cpu.pt')
 
     # Split data into train, validation, and test sets
     train_loader, val_loader, test_loader = create_stratified_dataloaders(data)
 
-    # Define model, criterion, optimizer, scheduler
-    model = ProModel()
-    criterion = nn.BCELoss()  # Changed from BCEWithLogitsLoss since we already have sigmoid
+    best_params = tune_hyperparameters(data, n_trials=100)
+
+    # Create model with best parameters
+    model = ProModel(
+        embedding_dim=1280,
+        dropout=best_params['dropout'],
+        hidden_dims=[
+            best_params['hidden_dim1'],
+            best_params['hidden_dim2'],
+            best_params['hidden_dim3']
+        ]
+    )
+
     optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+    criterion = nn.BCELoss()  # Changed from BCEWithLogitsLoss since we already have sigmoid
+    #
+    checkpoint = ModelCheckpoint('best_model.pt')
 
-    # Train the model
+    # Update training call
     val_losses, train_losses = train_model(
         model=model,
         train_loader=train_loader,
@@ -358,13 +350,17 @@ def main():
         epochs=10,
         criterion=criterion,
         optimizer=optimizer,
-        scheduler=scheduler
+        scheduler=scheduler,
+        checkpoint=checkpoint  # Add this line
     )
+
+    # Load best model for evaluation
+    best_model = checkpoint.load_best_model(model)
+
+    plot_roc_curve(best_model, test_loader)
 
     # Plot the training and validation losses
     plot_losses(train_losses, val_losses)
-
-
 
 
 if __name__ == "__main__":
