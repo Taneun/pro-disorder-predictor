@@ -50,6 +50,9 @@ def embed_data(input_file: str):
         print(f"Saving embeddings to {output_file}...")
         torch.save(protein_data, output_file)
         print("Embeddings saved successfully!")
+        # Clear some memory
+        del results, token_representations, sequence_representation, protein_data
+        torch.cuda.empty_cache()
 
 
 def chunk_list(list, chunk_size):
