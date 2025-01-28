@@ -19,15 +19,61 @@ import os
 from pathlib import Path
 
 
+# class AminoAcidDataset(Dataset):
+#     def __init__(self, data_dir):
+#         """
+#         Initialize the dataset from a directory of protein data files.
+#
+#         Args:
+#             data_dir: Path to directory containing protein data .pt files
+#                      Each file contains a dict with keys: id, rep, labels
+#         """
+#         self.samples = []
+#         data_dir = Path(data_dir)
+#
+#         # Get all .pt files in the directory
+#         protein_files = list(data_dir.glob("*.pt"))
+#
+#         # Process each protein file
+#         for protein_file in protein_files:
+#             # Load the protein data dictionary
+#             protein_dict = torch.load(protein_file)
+#
+#             protein_id = protein_dict["id"]
+#             embeddings = protein_dict["rep"]  # Shape: (protein_length, 1280)
+#             labels = protein_dict["labels"]  # Shape: (protein_length, 1)
+#
+#             # Process each amino acid in the protein
+#             for aa_idx in range(len(embeddings)):
+#                 self.samples.append({
+#                     "protein_id": protein_id,
+#                     "aa_index": aa_idx,
+#                     "embedding": embeddings[aa_idx],  # Shape: (1280,)
+#                     "label": labels[aa_idx]  # Convert to scalar
+#                 })
+#
+#     def __len__(self):
+#         return len(self.samples)
+#
+#     def __getitem__(self, idx):
+#         sample = self.samples[idx]
+#         return {
+#             "protein_id": sample["protein_id"],
+#             "aa_index": sample["aa_index"],
+#             "embedding": sample["embedding"],
+#             "label": sample["label"]
+#         }
+
 class AminoAcidDataset(Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, device=None):
         """
         Initialize the dataset from a directory of protein data files.
 
         Args:
             data_dir: Path to directory containing protein data .pt files
-                     Each file contains a dict with keys: id, rep, labels
+            device: torch.device to place tensors on (defaults to GPU if available)
         """
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.samples = []
         data_dir = Path(data_dir)
 
@@ -37,19 +83,20 @@ class AminoAcidDataset(Dataset):
         # Process each protein file
         for protein_file in protein_files:
             # Load the protein data dictionary
-            protein_dict = torch.load(protein_file)
+            protein_dict = torch.load(protein_file, map_location=self.device)
 
             protein_id = protein_dict["id"]
-            embeddings = protein_dict["rep"]  # Shape: (protein_length, 1280)
-            labels = protein_dict["labels"]  # Shape: (protein_length, 1)
+            # Move tensors to GPU immediately after loading
+            embeddings = protein_dict["rep"].to(self.device)  # Shape: (protein_length, 1280)
+            labels = protein_dict["labels"].to(self.device)  # Shape: (protein_length, 1)
 
             # Process each amino acid in the protein
             for aa_idx in range(len(embeddings)):
                 self.samples.append({
                     "protein_id": protein_id,
                     "aa_index": aa_idx,
-                    "embedding": embeddings[aa_idx],  # Shape: (1280,)
-                    "label": labels[aa_idx]  # Convert to scalar
+                    "embedding": embeddings[aa_idx],  # Already on GPU
+                    "label": labels[aa_idx]  # Already on GPU
                 })
 
     def __len__(self):
@@ -57,6 +104,7 @@ class AminoAcidDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
+        # No need to move to device here since they're already on GPU
         return {
             "protein_id": sample["protein_id"],
             "aa_index": sample["aa_index"],
@@ -64,34 +112,8 @@ class AminoAcidDataset(Dataset):
             "label": sample["label"]
         }
 
-
-class ModelCheckpoint:
-    def __init__(self, filepath):
-        self.filepath = filepath
-        self.best_val_loss = float('inf')
-        self.best_model = None
-
-    def update(self, model, val_loss):
-        """Update the best model if current validation loss is better."""
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss
-            self.best_model = deepcopy(model.state_dict())
-            torch.save({
-                'model_state_dict': self.best_model,
-                'val_loss': self.best_val_loss
-            }, self.filepath)
-            return True
-        return False
-
-    def load_best_model(self, model):
-        """Load the best model weights into the provided model."""
-        checkpoint = torch.load(self.filepath)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        return model
-
-
 def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val_ratio=0.15,
-                                  test_ratio=0.2, random_state=42):
+                                test_ratio=0.2, random_state=42):
     """
     Create stratified train/validation/test DataLoaders ensuring proteins are not split across sets.
 
@@ -106,8 +128,9 @@ def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val
     Returns:
         train_loader, val_loader, test_loader
     """
-    # Create full dataset
-    full_dataset = AminoAcidDataset(data_dir)
+    # Create full dataset with GPU support
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    full_dataset = AminoAcidDataset(data_dir, device=device)
 
     # Group samples by protein_id
     protein_groups = {}
@@ -119,27 +142,27 @@ def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val
                 'labels': []
             }
         protein_groups[protein_id]['indices'].append(idx)
-        protein_groups[protein_id]['labels'].append(sample["label"])
+        # Move label to CPU for numpy operations
+        protein_groups[protein_id]['labels'].append(sample["label"].cpu().item())
 
     # Calculate mean label for each protein for stratification
     protein_ids = list(protein_groups.keys())
     mean_labels = [np.mean(protein_groups[pid]['labels']) for pid in protein_ids]
 
-    # Split proteins into train/val/test
+    # Rest of the function remains the same...
     train_proteins, temp_proteins = train_test_split(
         protein_ids,
         train_size=train_ratio,
-        stratify=pd.qcut(mean_labels, q=5, labels=False),  # Stratify by binned mean labels
+        stratify=pd.qcut(mean_labels, q=5, labels=False),
         random_state=random_state
     )
 
-    # Split remaining proteins into val and test
     val_ratio_adjusted = val_ratio / (val_ratio + test_ratio)
     val_proteins, test_proteins = train_test_split(
         temp_proteins,
         train_size=val_ratio_adjusted,
         stratify=pd.qcut([mean_labels[protein_ids.index(p)] for p in temp_proteins],
-                         q=3, labels=False),  # Fewer bins due to smaller sample
+                        q=3, labels=False),
         random_state=random_state
     )
 
@@ -173,6 +196,116 @@ def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val
     )
 
     return train_loader, val_loader, test_loader
+
+
+class ModelCheckpoint:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.best_val_loss = float('inf')
+        self.best_model = None
+
+    def update(self, model, val_loss):
+        """Update the best model if current validation loss is better."""
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            self.best_model = deepcopy(model.state_dict())
+            torch.save({
+                'model_state_dict': self.best_model,
+                'val_loss': self.best_val_loss
+            }, self.filepath)
+            return True
+        return False
+
+    def load_best_model(self, model):
+        """Load the best model weights into the provided model."""
+        checkpoint = torch.load(self.filepath)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        return model
+
+#
+# def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val_ratio=0.15,
+#                                   test_ratio=0.2, random_state=42):
+#     """
+#     Create stratified train/validation/test DataLoaders ensuring proteins are not split across sets.
+#
+#     Args:
+#         data_dir: str of protein dictionaries
+#         batch_size: Batch size for DataLoaders
+#         train_ratio: Proportion of data for training
+#         val_ratio: Proportion of data for validation
+#         test_ratio: Proportion of data for testing
+#         random_state: Random seed for reproducibility
+#
+#     Returns:
+#         train_loader, val_loader, test_loader
+#     """
+#     # Create full dataset
+#     full_dataset = AminoAcidDataset(data_dir)
+#
+#     # Group samples by protein_id
+#     protein_groups = {}
+#     for idx, sample in enumerate(full_dataset.samples):
+#         protein_id = sample["protein_id"]
+#         if protein_id not in protein_groups:
+#             protein_groups[protein_id] = {
+#                 'indices': [],
+#                 'labels': []
+#             }
+#         protein_groups[protein_id]['indices'].append(idx)
+#         protein_groups[protein_id]['labels'].append(sample["label"])
+#
+#     # Calculate mean label for each protein for stratification
+#     protein_ids = list(protein_groups.keys())
+#     mean_labels = [np.mean(protein_groups[pid]['labels']) for pid in protein_ids]
+#
+#     # Split proteins into train/val/test
+#     train_proteins, temp_proteins = train_test_split(
+#         protein_ids,
+#         train_size=train_ratio,
+#         stratify=pd.qcut(mean_labels, q=5, labels=False),  # Stratify by binned mean labels
+#         random_state=random_state
+#     )
+#
+#     # Split remaining proteins into val and test
+#     val_ratio_adjusted = val_ratio / (val_ratio + test_ratio)
+#     val_proteins, test_proteins = train_test_split(
+#         temp_proteins,
+#         train_size=val_ratio_adjusted,
+#         stratify=pd.qcut([mean_labels[protein_ids.index(p)] for p in temp_proteins],
+#                          q=3, labels=False),  # Fewer bins due to smaller sample
+#         random_state=random_state
+#     )
+#
+#     # Collect indices for each split
+#     train_indices = [idx for pid in train_proteins for idx in protein_groups[pid]['indices']]
+#     val_indices = [idx for pid in val_proteins for idx in protein_groups[pid]['indices']]
+#     test_indices = [idx for pid in test_proteins for idx in protein_groups[pid]['indices']]
+#
+#     # Create subset datasets
+#     train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
+#     val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
+#     test_dataset = torch.utils.data.Subset(full_dataset, test_indices)
+#
+#     # Create DataLoaders
+#     train_loader = DataLoader(
+#         train_dataset,
+#         batch_size=batch_size,
+#         shuffle=True
+#     )
+#
+#     val_loader = DataLoader(
+#         val_dataset,
+#         batch_size=batch_size,
+#         shuffle=False
+#     )
+#
+#     test_loader = DataLoader(
+#         test_dataset,
+#         batch_size=batch_size,
+#         shuffle=False
+#     )
+#
+#     return train_loader, val_loader, test_loader
 
 
 # Updated ProModel class with configurable layer sizes
@@ -347,10 +480,9 @@ def tune_hyperparameters(data, n_trials=100):
 
 
 def main():
-    # embed_data('DisProt_release_2024_12_Consensus_without_includes.json', 'embeddings_overnight.pt')
     # data = torch.load('embeddings_overnight.pt')
     # cpu_data = torch.load('embeddings_cpu.pt')
-    embed_data('DisProt_release_2024_12_Consensus_without_includes.json')
+    # embed_data('DisProt_release_2024_12_Consensus_without_includes.json')
     directory = 'post_embedding'
 
     # Split data into train, validation, and test sets
