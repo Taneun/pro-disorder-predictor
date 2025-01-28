@@ -1,37 +1,44 @@
 import torch
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split, GroupKFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
-from sklearn.preprocessing import label_binarize
 import matplotlib.pyplot as plt
+import argparse
+import os
+from tqdm import tqdm
 
 
-def load_and_prepare_data(pt_file):
+def load_and_prepare_data(directory):
     """
-    Load data from PT file and prepare it for training.
+    Load data from all PT files in the specified directory.
     Returns features, labels, and protein IDs arrays.
     """
-    # Load the saved embeddings
-    sequence_representations = torch.load(pt_file)
-
     # Initialize lists to store features, labels, and protein IDs
     all_features = []
     all_labels = []
     protein_ids = []
 
-    # Process each protein sequence
-    for seq in sequence_representations:
-        # Convert embeddings to numpy array
-        features = seq["rep"].numpy()
-        labels = seq["labels"]
+    # Get all PT files in directory
+    pt_files = [f for f in os.listdir(directory) if f.endswith('.pt')]
 
-        # Append features and labels for each amino acid
+    # Process each PT file
+    for pt_file in tqdm(pt_files, desc="Loading protein data"):
+        # Load the saved embeddings
+        file_path = os.path.join(directory, pt_file)
+        protein_data = torch.load(file_path)
+
+        # Extract data
+        features = protein_data["rep"].numpy()
+        labels = protein_data["labels"]
+        prot_id = protein_data["id"]
+
+        # Append features and labels
         all_features.append(features)
         all_labels.append(labels)
 
         # Repeat protein ID for each amino acid in the sequence
-        protein_ids.extend([seq["id"]] * len(labels))
+        protein_ids.extend([prot_id] * len(labels))
 
     # Concatenate all features and labels
     X = np.vstack(all_features)
@@ -43,11 +50,6 @@ def load_and_prepare_data(pt_file):
 def plot_roc_curves(y_test, y_pred_proba, classes):
     """
     Plot ROC curves for each class.
-
-    Args:
-        y_test: True labels
-        y_pred_proba: Predicted probabilities for each class
-        classes: List of unique class labels
     """
     plt.figure(figsize=(10, 8))
 
@@ -63,7 +65,7 @@ def plot_roc_curves(y_test, y_pred_proba, classes):
     # For multi-class classification
     else:
         # Binarize the labels for multi-class ROC
-        y_test_bin = label_binarize(y_test, classes=classes)
+        y_test_bin = np.eye(len(classes))[np.searchsorted(classes, y_test)]
 
         # Calculate ROC curve and ROC area for each class
         for i, class_label in enumerate(classes):
@@ -130,7 +132,10 @@ def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
     print(f"Accuracy: {accuracy:.4f}")
     print("Classification Report:")
     print(report)
-    plt.show()  # Display ROC curve
+
+    # Save the plot
+    plt.savefig('log_roc_curve.png', dpi=300, bbox_inches='tight')
+    plt.show()
 
     return {
         'accuracy': accuracy,
@@ -142,13 +147,15 @@ def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
     }
 
 
-def main(pt_file_path, use_kfold=False):
-    """
-    Main function to run the entire pipeline.
-    """
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train logistic regression model on protein embeddings.')
+    parser.add_argument('embedding_dir', type=str, help='Directory containing PT files with embeddings')
+    args = parser.parse_args()
+
     # Load and prepare data
-    print("Loading data...")
-    X, y, protein_ids = load_and_prepare_data(pt_file_path)
+    print("Loading data from directory:", args.embedding_dir)
+    X, y, protein_ids = load_and_prepare_data(args.embedding_dir)
 
     print(f"Loaded {len(protein_ids)} amino acids from {len(np.unique(protein_ids))} proteins")
     print(f"Feature dimension: {X.shape[1]}")
@@ -156,14 +163,10 @@ def main(pt_file_path, use_kfold=False):
 
     # Train and evaluate model
     print("\nTraining and evaluating model...")
-    if use_kfold:
-        raise NotImplementedError("K-fold implementation removed for clarity. Use previous version if needed.")
-    else:
-        results = train_and_evaluate_single_split(X, y, protein_ids)
+    results = train_and_evaluate_single_split(X, y, protein_ids)
 
     return results
 
 
 if __name__ == "__main__":
-    pt_file_path = "embeddings.pt"
-    results = main(pt_file_path, use_kfold=False)
+    results = main()
