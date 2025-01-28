@@ -88,7 +88,7 @@ class AminoAcidDataset(Dataset):
             protein_id = protein_dict["id"]
             # Move tensors to GPU immediately after loading
             embeddings = protein_dict["rep"].to(self.device)  # Shape: (protein_length, 1280)
-            labels = protein_dict["labels"]  # Shape: (protein_length, 1)
+            labels = torch.tensor(protein_dict["labels"], device=self.device)  # Shape: (protein_length, 1)
 
             # Process each amino acid in the protein
             for aa_idx in range(len(embeddings)):
@@ -143,7 +143,7 @@ def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val
             }
         protein_groups[protein_id]['indices'].append(idx)
         # Move label to CPU for numpy operations
-        protein_groups[protein_id]['labels'].append(sample["label"])
+        protein_groups[protein_id]['labels'].append(sample["label"].cpu().item())
 
     # Calculate mean label for each protein for stratification
     protein_ids = list(protein_groups.keys())
