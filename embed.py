@@ -22,6 +22,7 @@ def embed_data(input_file: str):
     for chunk in tqdm(chunks, desc="Processing chunks", unit="chunk"):
         prot_id = chunk[0][0]
         batch_labels, batch_strs, batch_tokens = batch_converter(chunk)
+        batch_tokens = batch_tokens.cuda()
         batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
 
         # Extract per-residue representations (on CPU)
