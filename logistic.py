@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
+from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc, balanced_accuracy_score
 import matplotlib.pyplot as plt
 import argparse
 import os
@@ -122,6 +122,9 @@ def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
     # Calculate accuracy
     accuracy = accuracy_score(y_test, y_pred)
 
+    # Calculate balanced accuracy
+    balanced_acc = balanced_accuracy_score(y_test, y_pred)
+
     # Generate classification report
     report = classification_report(y_test, y_pred)
 
@@ -130,6 +133,7 @@ def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
 
     print(f"\nResults:")
     print(f"Accuracy: {accuracy:.4f}")
+    print(f"Balanced Accuracy: {balanced_acc:.4f}")
     print("Classification Report:")
     print(report)
 
