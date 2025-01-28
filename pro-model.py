@@ -88,7 +88,7 @@ class AminoAcidDataset(Dataset):
             protein_id = protein_dict["id"]
             # Move tensors to GPU immediately after loading
             embeddings = protein_dict["rep"].to(self.device)  # Shape: (protein_length, 1280)
-            labels = protein_dict["labels"].to(self.device)  # Shape: (protein_length, 1)
+            labels = protein_dict["labels"]  # Shape: (protein_length, 1)
 
             # Process each amino acid in the protein
             for aa_idx in range(len(embeddings)):
