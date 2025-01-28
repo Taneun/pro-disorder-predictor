@@ -1,8 +1,10 @@
 import torch
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GroupKFold
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split, GroupKFold
+from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
+from sklearn.preprocessing import label_binarize
+import matplotlib.pyplot as plt
 
 
 def load_and_prepare_data(pt_file):
@@ -38,51 +40,109 @@ def load_and_prepare_data(pt_file):
     return X, y, np.array(protein_ids)
 
 
-def train_and_evaluate(X, y, protein_ids, n_splits=5):
+def plot_roc_curves(y_test, y_pred_proba, classes):
     """
-    Train and evaluate logistic regression model using group k-fold cross validation.
+    Plot ROC curves for each class.
+
+    Args:
+        y_test: True labels
+        y_pred_proba: Predicted probabilities for each class
+        classes: List of unique class labels
+    """
+    plt.figure(figsize=(10, 8))
+
+    # For binary classification
+    if len(classes) == 2:
+        # For binary classification, we only need the probability of the positive class
+        fpr, tpr, _ = roc_curve(y_test, y_pred_proba[:, 1])
+        roc_auc = auc(fpr, tpr)
+
+        plt.plot(fpr, tpr, lw=2,
+                 label=f'ROC curve (AUC = {roc_auc:0.2f})')
+
+    # For multi-class classification
+    else:
+        # Binarize the labels for multi-class ROC
+        y_test_bin = label_binarize(y_test, classes=classes)
+
+        # Calculate ROC curve and ROC area for each class
+        for i, class_label in enumerate(classes):
+            fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_pred_proba[:, i])
+            roc_auc = auc(fpr, tpr)
+
+            plt.plot(fpr, tpr, lw=2,
+                     label=f'ROC curve (class {class_label}, AUC = {roc_auc:0.2f})')
+
+    # Plot diagonal line
+    plt.plot([0, 1], [0, 1], 'k--', lw=2)
+
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+
+    return plt.gcf()
+
+
+def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
+    """
+    Train and evaluate model using a single train-test split.
     Ensures amino acids from the same protein stay together.
     """
-    # Initialize GroupKFold
-    group_kfold = GroupKFold(n_splits=n_splits)
+    # Get unique proteins
+    unique_proteins = np.unique(protein_ids)
 
-    # Store results for each fold
-    fold_results = []
+    # Split proteins into train and test sets
+    train_proteins, test_proteins = train_test_split(unique_proteins, test_size=test_size, random_state=42)
 
-    for fold, (train_idx, test_idx) in enumerate(group_kfold.split(X, y, protein_ids)):
-        # Split data while keeping proteins together
-        X_train, X_test = X[train_idx], X[test_idx]
-        y_train, y_test = y[train_idx], y[test_idx]
+    # Create masks for train and test sets
+    train_mask = np.isin(protein_ids, train_proteins)
+    test_mask = np.isin(protein_ids, test_proteins)
 
-        # Initialize and train logistic regression model
-        model = LogisticRegression(max_iter=1000, multi_class='ovr')
-        model.fit(X_train, y_train)
+    # Split the data
+    X_train, X_test = X[train_mask], X[test_mask]
+    y_train, y_test = y[train_mask], y[test_mask]
 
-        # Make predictions
-        y_pred = model.predict(X_test)
+    # Get unique classes
+    classes = np.unique(y)
+    print(f"Unique classes: {classes}")
 
-        # Calculate accuracy
-        accuracy = accuracy_score(y_test, y_pred)
+    # Initialize and train logistic regression model
+    model = LogisticRegression(max_iter=1000, multi_class='ovr')
+    model.fit(X_train, y_train)
 
-        # Generate classification report
-        report = classification_report(y_test, y_pred)
+    # Make predictions
+    y_pred = model.predict(X_test)
+    y_pred_proba = model.predict_proba(X_test)
 
-        fold_results.append({
-            'fold': fold + 1,
-            'accuracy': accuracy,
-            'report': report,
-            'model': model
-        })
+    # Calculate accuracy
+    accuracy = accuracy_score(y_test, y_pred)
 
-        print(f"\nFold {fold + 1} Results:")
-        print(f"Accuracy: {accuracy:.4f}")
-        print("Classification Report:")
-        print(report)
+    # Generate classification report
+    report = classification_report(y_test, y_pred)
 
-    return fold_results
+    # Generate ROC curve plot
+    roc_plot = plot_roc_curves(y_test, y_pred_proba, classes)
+
+    print(f"\nResults:")
+    print(f"Accuracy: {accuracy:.4f}")
+    print("Classification Report:")
+    print(report)
+    plt.show()  # Display ROC curve
+
+    return {
+        'accuracy': accuracy,
+        'report': report,
+        'model': model,
+        'roc_plot': roc_plot,
+        'y_test': y_test,
+        'y_pred_proba': y_pred_proba
+    }
 
 
-def main(pt_file_path):
+def main(pt_file_path, use_kfold=False):
     """
     Main function to run the entire pipeline.
     """
@@ -96,15 +156,14 @@ def main(pt_file_path):
 
     # Train and evaluate model
     print("\nTraining and evaluating model...")
-    results = train_and_evaluate(X, y, protein_ids)
-
-    # Calculate and print average accuracy across folds
-    avg_accuracy = np.mean([r['accuracy'] for r in results])
-    print(f"\nAverage accuracy across folds: {avg_accuracy:.4f}")
+    if use_kfold:
+        raise NotImplementedError("K-fold implementation removed for clarity. Use previous version if needed.")
+    else:
+        results = train_and_evaluate_single_split(X, y, protein_ids)
 
     return results
 
 
 if __name__ == "__main__":
     pt_file_path = "embeddings.pt"
-    results = main(pt_file_path)
+    results = main(pt_file_path, use_kfold=False)
