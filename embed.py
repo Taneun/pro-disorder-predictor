@@ -123,7 +123,7 @@ def embed_data(input_file: str):
                 # Process normally for shorter sequences
                 model.cuda()
                 batch_tokens = batch_tokens.cuda()
-
+                batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
                 with torch.no_grad():
                     results = model(batch_tokens, repr_layers=[33], return_contacts=True)
                     token_representations = results["representations"][33]
