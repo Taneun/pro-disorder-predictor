@@ -143,7 +143,7 @@ def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val
             }
         protein_groups[protein_id]['indices'].append(idx)
         # Move label to CPU for numpy operations
-        protein_groups[protein_id]['labels'].append(sample["label"].cpu().item())
+        protein_groups[protein_id]['labels'].append(sample["label"])
 
     # Calculate mean label for each protein for stratification
     protein_ids = list(protein_groups.keys())
