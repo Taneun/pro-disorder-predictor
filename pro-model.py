@@ -13,21 +13,32 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import optuna
 from copy import deepcopy
+import torch
+from torch.utils.data import Dataset
+import os
+from pathlib import Path
 
 
 class AminoAcidDataset(Dataset):
-    def __init__(self, data_list):
+    def __init__(self, data_dir):
         """
-        Initialize the dataset from a list of protein dictionaries.
+        Initialize the dataset from a directory of protein data files.
 
         Args:
-            data_list: List of dictionaries containing protein data
-                      Each dict has keys: protein_id, embedding, label
+            data_dir: Path to directory containing protein data .pt files
+                     Each file contains a dict with keys: id, rep, labels
         """
         self.samples = []
+        data_dir = Path(data_dir)
 
-        # Process each protein in the data list
-        for protein_dict in data_list:
+        # Get all .pt files in the directory
+        protein_files = list(data_dir.glob("*.pt"))
+
+        # Process each protein file
+        for protein_file in protein_files:
+            # Load the protein data dictionary
+            protein_dict = torch.load(protein_file)
+
             protein_id = protein_dict["id"]
             embeddings = protein_dict["rep"]  # Shape: (protein_length, 1280)
             labels = protein_dict["labels"]  # Shape: (protein_length, 1)
@@ -78,13 +89,14 @@ class ModelCheckpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
         return model
 
-def create_stratified_dataloaders(data_list, batch_size=32, train_ratio=0.65, val_ratio=0.15,
+
+def create_stratified_dataloaders(data_dir, batch_size=32, train_ratio=0.65, val_ratio=0.15,
                                   test_ratio=0.2, random_state=42):
     """
-    Create stratified train/validation/test DataLoaders.
+    Create stratified train/validation/test DataLoaders ensuring proteins are not split across sets.
 
     Args:
-        data_list: List of protein dictionaries
+        data_dir: str of protein dictionaries
         batch_size: Batch size for DataLoaders
         train_ratio: Proportion of data for training
         val_ratio: Proportion of data for validation
@@ -95,28 +107,46 @@ def create_stratified_dataloaders(data_list, batch_size=32, train_ratio=0.65, va
         train_loader, val_loader, test_loader
     """
     # Create full dataset
-    full_dataset = AminoAcidDataset(data_list)
+    full_dataset = AminoAcidDataset(data_dir)
 
-    # Prepare data for stratification
-    all_labels = [sample["label"] for sample in full_dataset.samples]
-    all_indices = np.arange(len(full_dataset))
+    # Group samples by protein_id
+    protein_groups = {}
+    for idx, sample in enumerate(full_dataset.samples):
+        protein_id = sample["protein_id"]
+        if protein_id not in protein_groups:
+            protein_groups[protein_id] = {
+                'indices': [],
+                'labels': []
+            }
+        protein_groups[protein_id]['indices'].append(idx)
+        protein_groups[protein_id]['labels'].append(sample["label"])
 
-    # First split: train and temp (val + test)
-    train_indices, temp_indices = train_test_split(
-        all_indices,
+    # Calculate mean label for each protein for stratification
+    protein_ids = list(protein_groups.keys())
+    mean_labels = [np.mean(protein_groups[pid]['labels']) for pid in protein_ids]
+
+    # Split proteins into train/val/test
+    train_proteins, temp_proteins = train_test_split(
+        protein_ids,
         train_size=train_ratio,
-        stratify=[all_labels[i] for i in all_indices],
+        stratify=pd.qcut(mean_labels, q=5, labels=False),  # Stratify by binned mean labels
         random_state=random_state
     )
 
-    # Second split: val and test from temp
+    # Split remaining proteins into val and test
     val_ratio_adjusted = val_ratio / (val_ratio + test_ratio)
-    val_indices, test_indices = train_test_split(
-        temp_indices,
+    val_proteins, test_proteins = train_test_split(
+        temp_proteins,
         train_size=val_ratio_adjusted,
-        stratify=[all_labels[i] for i in temp_indices],
+        stratify=pd.qcut([mean_labels[protein_ids.index(p)] for p in temp_proteins],
+                         q=3, labels=False),  # Fewer bins due to smaller sample
         random_state=random_state
     )
+
+    # Collect indices for each split
+    train_indices = [idx for pid in train_proteins for idx in protein_groups[pid]['indices']]
+    val_indices = [idx for pid in val_proteins for idx in protein_groups[pid]['indices']]
+    test_indices = [idx for pid in test_proteins for idx in protein_groups[pid]['indices']]
 
     # Create subset datasets
     train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
@@ -253,13 +283,13 @@ def train_model(
     return val_losses, train_losses
 
 
-def objective(trial, data, epochs=10, batch_size=32):
+def objective(trial, data_dir, epochs=10, batch_size=32):
     """
     Optuna objective function for hyperparameter optimization.
 
     Args:
         trial: Optuna trial object
-        data: Training data
+        data: Training data dir
         epochs: Number of epochs
         batch_size: Batch size
     """
@@ -275,13 +305,14 @@ def objective(trial, data, epochs=10, batch_size=32):
 
     # Create model and training components
     model = ProModel(embedding_dim=1280, dropout=dropout, hidden_dims=hidden_dims)
+    model.cuda()
     criterion = nn.BCELoss()
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
     # Create dataloaders
     train_loader, val_loader, _ = create_stratified_dataloaders(
-        data, batch_size=batch_size
+        data_dir, batch_size=batch_size
     )
 
     # Train model
@@ -317,13 +348,15 @@ def tune_hyperparameters(data, n_trials=100):
 
 def main():
     # embed_data('DisProt_release_2024_12_Consensus_without_includes.json', 'embeddings_overnight.pt')
-    data = torch.load('embeddings_overnight.pt')
+    # data = torch.load('embeddings_overnight.pt')
     # cpu_data = torch.load('embeddings_cpu.pt')
+    embed_data('DisProt_release_2024_12_Consensus_without_includes.json')
+    directory = 'post_embedding'
 
     # Split data into train, validation, and test sets
-    train_loader, val_loader, test_loader = create_stratified_dataloaders(data)
+    train_loader, val_loader, test_loader = create_stratified_dataloaders(directory)
 
-    best_params = tune_hyperparameters(data, n_trials=100)
+    best_params = tune_hyperparameters(directory, n_trials=100)
 
     # Create model with best parameters
     model = ProModel(
@@ -335,6 +368,7 @@ def main():
             best_params['hidden_dim3']
         ]
     )
+    model.cuda()
 
     optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)

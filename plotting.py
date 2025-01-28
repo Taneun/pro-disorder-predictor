@@ -16,6 +16,7 @@ def plot_roc_curve(model, test_loader):
         test_loader: DataLoader containing test data
     """
     model.eval()
+    model.cuda()
     all_preds = []
     all_labels = []
 
@@ -74,7 +75,8 @@ def plot_roc_curve(model, test_loader):
         template='plotly_white'
     )
 
-    fig.show()
+    # fig.show()
+    fig.write_html("roc_curve.html")
 
     # Print AUC score
     print(f"AUC Score: {roc_auc:.4f}")
@@ -153,11 +155,8 @@ def plot_losses(train_losses, val_losses):
     )
 
     # Show the figure
-    fig.show()
-
-
-import numpy as np
-import torch
+    # fig.show()
+    fig.write_html("losses.html")
 
 
 def preprocess_data_for_pca(data, pca_type="protein"):
@@ -190,11 +189,11 @@ def preprocess_data_for_pca(data, pca_type="protein"):
         embeddings = []
         labels = []
 
-        for item in data:
+        for protein_file in data:
             # Mean over sequence for embeddings
-            embeddings.append(item["rep"].mean(dim=0).numpy())
+            embeddings.append(protein_file["rep"].mean(dim=0).numpy())
             # Mean over sequence for labels
-            labels.append(np.mean(item["labels"]))
+            labels.append(np.mean(protein_file["labels"]))
 
         embeddings = np.vstack(embeddings)
         labels = np.array(labels)
@@ -204,11 +203,11 @@ def preprocess_data_for_pca(data, pca_type="protein"):
         embeddings = []
         labels = []
 
-        for item in data:
+        for protein_file in data:
             # Add all amino acid embeddings
-            embeddings.append(item["rep"].numpy())
+            embeddings.append(protein_file["rep"].numpy())
             # Add all amino acid labels
-            labels.append(np.array(item["labels"]).flatten())
+            labels.append(np.array(protein_file["labels"]).flatten())
 
         embeddings = np.vstack(embeddings)
         labels = np.concatenate(labels)
@@ -216,7 +215,7 @@ def preprocess_data_for_pca(data, pca_type="protein"):
     return embeddings, labels
 
 
-def plot_embedding_pca(data, num_components=2, pca_type="protein"):
+def plot_embedding_pca(data_dir, num_components=2, pca_type="protein"):
     """
     Plots a PCA projection of high-dimensional embeddings using Plotly.
     Supports both protein-level and amino acid-level visualization.
@@ -229,6 +228,8 @@ def plot_embedding_pca(data, num_components=2, pca_type="protein"):
         num_components (int): Number of PCA components to project onto (default=2).
         pca_type (str): Type of PCA to perform: "protein" or "amino" (default="protein").
     """
+    protein_files = list(data_dir.glob("*.pt"))
+    data = [torch.load(protein_file) for protein_file in protein_files]
     # Get preprocessed data
     embeddings, labels = preprocess_data_for_pca(data, pca_type=pca_type)
 
@@ -319,11 +320,8 @@ def plot_embedding_pca(data, num_components=2, pca_type="protein"):
     )
 
     # Show plot
-    fig.show()
+    # fig.show()
+    fig.write_html(f"pca_{pca_type}.html")
 
-
-data = torch.load("embeddings_overnight.pt")
-plot_embedding_pca(data)
-plot_embedding_pca(data, pca_type="amino")
 
 
