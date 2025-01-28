@@ -44,15 +44,57 @@ def generate_labels_for_sequence(sequence: str, disordered_regions: np.ndarray) 
     return labels
 
 
+
+def meets_filtering_criteria(sample: dict, disordered_regions: np.ndarray) -> bool:
+    """
+    Checks if a protein sample meets all filtering criteria.
+    
+    Criteria:
+    1. Must have AlphaFold predictions
+    2. Sequence length must be between 100-1000 amino acids
+    3. Must have at least one disordered region of 30 or more consecutive amino acids
+    
+    Args:
+        sample (dict): Protein sample data
+        disordered_regions (np.ndarray): Array of (start, end) pairs for disordered regions
+        
+    Returns:
+        bool: True if protein meets all criteria, False otherwise
+    """
+    # Check for AlphaFold predictions
+    has_alphafold = 'alphafold_very_low_content' in sample
+    
+    # Check sequence length
+    valid_length = 100 <= sample['length'] <= 1000
+    
+    # Check for long disordered regions
+    has_long_disorder = False
+    for start, end in disordered_regions:
+        if end - start >= 30:
+            has_long_disorder = True
+            break
+            
+    return has_alphafold and valid_length and has_long_disorder
+
+
+
 def prep_processed_dict(json_file: dict) -> dict:
     """
     Extracts sequences and their labeled regions from the JSON file.
+    Applies filtering criteria using meets_filtering_criteria helper function.
+    
+    Args:
+        json_file (dict): Input JSON containing protein data
+        
+    Returns:
+        dict: Filtered protein data with sequences and their labeled regions
     """
     filtered_data = {}
     for sample in json_file['data']:
-        if 'alphafold_very_low_content' in sample:
+         disordered_regions = extract_disordered_regions(sample)
+
+         if meets_filtering_criteria(sample, disordered_regions):
             sequence = sample['sequence']
-            disordered_regions = extract_disordered_regions(sample)
             labeled_sequence = generate_labels_for_sequence(sequence, disordered_regions)
             filtered_data[sample['acc']] = (sequence, labeled_sequence.tolist())
     return filtered_data
@@ -108,3 +150,4 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
 #     write_fasta_file(model_ready_data, output_fasta)
 
 #     print(model_ready_data['P49913'])
+#     print (len(model_ready_data))
