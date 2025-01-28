@@ -134,20 +134,20 @@ def preprocess_data(json_path: str, output_fasta_path: str = None) -> dict:
     return model_ready_data
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     
-    json_path = "C:/Users/danas/OneDrive/Desktop/pro-disorder-predictor/DisProt_release_2024_12_Consensus_without_includes.json"
-  # Update with your JSON file path
-    output_fasta = "C:/Users/danas/OneDrive/Desktop/pro-disorder-predictor/output.fasta"
+#     json_path = "C:/Users/danas/OneDrive/Desktop/pro-disorder-predictor/DisProt_release_2024_12_Consensus_without_includes.json"
+#   # Update with your JSON file path
+#     output_fasta = "C:/Users/danas/OneDrive/Desktop/pro-disorder-predictor/output.fasta"
 
-    # Step 1: Load the JSON file
-    json_data = load_json_data(json_path)
+#     # Step 1: Load the JSON file
+#     json_data = load_json_data(json_path)
 
-    # Step 2: Extract sequences and labeled regions
-    model_ready_data = prep_processed_dict(json_data)
+#     # Step 2: Extract sequences and labeled regions
+#     model_ready_data = prep_processed_dict(json_data)
 
-    # Step 3: Create a FASTA file
-    write_fasta_file(model_ready_data, output_fasta)
+#     # Step 3: Create a FASTA file
+#     write_fasta_file(model_ready_data, output_fasta)
 
-    print(model_ready_data['P49913'])
-    print (len(model_ready_data))
+#     print(model_ready_data['P49913'])
+#     print (len(model_ready_data))
