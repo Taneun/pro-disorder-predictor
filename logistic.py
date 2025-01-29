@@ -46,7 +46,7 @@ def load_and_prepare_data(directory):
     X = np.vstack([t.cpu().numpy() for t in all_features])
     y = np.concatenate([t.cpu().numpy() for t in all_features])
 
-    return X, y, np.array([t.cpu().numpy() for t in protein_ids])
+    return X, y, np.array(protein_ids)
 
 
 def plot_roc_curves(y_test, y_pred_proba, classes):
