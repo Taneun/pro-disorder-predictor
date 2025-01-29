@@ -213,7 +213,7 @@ def preprocess_data_for_pca(data, pca_type="protein"):
 
         for protein_file in data:
             # Add all amino acid embeddings
-            embeddings.append(protein_file["rep"].numpy())
+            embeddings.append(protein_file["rep"].cpu().numpy())
             # Add all amino acid labels
             labels.append(np.array(protein_file["labels"]).flatten())
 
