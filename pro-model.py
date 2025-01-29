@@ -521,7 +521,7 @@ def main():
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        epochs=25,
+        epochs=50,
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
