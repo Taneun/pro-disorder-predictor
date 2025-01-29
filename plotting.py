@@ -559,6 +559,6 @@ if __name__ == "__main__":
     # plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
     # plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
 
-    create_umap_visualization(p_embeddings, p_labels)
-    create_umap_visualization(a_embeddings, a_labels, header="Amino Acids")
+    # create_umap_visualization(p_embeddings, p_labels)
+    create_umap_visualization(a_embeddings, a_labels, header="Amino-Acids")
 
