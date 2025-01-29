@@ -41,10 +41,12 @@ def load_and_prepare_data(directory):
         protein_ids.extend([prot_id] * len(labels))
 
     # Concatenate all features and labels
-    X = np.vstack(all_features)
-    y = np.concatenate(all_labels)
+    # X = np.vstack(all_features)
+    # y = np.concatenate(all_labels)
+    X = np.vstack([t.cpu().numpy() for t in all_features])
+    y = np.concatenate([t.cpu().numpy() for t in all_features])
 
-    return X, y, np.array(protein_ids)
+    return X, y, np.array([t.cpu().numpy() for t in protein_ids])
 
 
 def plot_roc_curves(y_test, y_pred_proba, classes):
