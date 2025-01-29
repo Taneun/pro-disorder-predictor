@@ -199,7 +199,7 @@ def preprocess_data_for_pca(data, pca_type="protein"):
 
         for protein_file in data:
             # Mean over sequence for embeddings
-            embeddings.append(protein_file["rep"].mean(dim=0).numpy())
+            embeddings.append(protein_file["rep"].mean(dim=0).cpu().numpy())
             # Mean over sequence for labels
             labels.append(np.mean(protein_file["labels"]))
 
