@@ -438,7 +438,8 @@ def objective(trial, data_dir, epochs=10, batch_size=32):
 
     # Create model and training components
     model = ProModel(embedding_dim=1280, dropout=dropout, hidden_dims=hidden_dims)
-    model.cuda()
+    if torch.cuda.is_available():
+        model.cuda()
     criterion = nn.BCELoss()
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
@@ -488,7 +489,13 @@ def main():
     # Split data into train, validation, and test sets
     train_loader, val_loader, test_loader = create_stratified_dataloaders(directory)
 
-    best_params = tune_hyperparameters(directory, n_trials=100)
+    # best_params = tune_hyperparameters(directory, n_trials=5)
+    best_params = {'lr': 0.00125955977553242,
+                   'dropout': 0.38874543396466815,
+                   'weight_decay': 0.0009019430072460465,
+                   'hidden_dim1': 192,
+                   'hidden_dim2': 96,
+                   'hidden_dim3': 64}
 
     # Create model with best parameters
     model = ProModel(
@@ -500,7 +507,8 @@ def main():
             best_params['hidden_dim3']
         ]
     )
-    model.cuda()
+    if torch.cuda.is_available():
+        model.cuda()
 
     optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
@@ -513,7 +521,7 @@ def main():
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        epochs=10,
+        epochs=25,
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,

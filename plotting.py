@@ -5,6 +5,7 @@ import torch
 from sklearn.decomposition import PCA
 import pandas as pd
 import plotly.express as px
+import matplotlib.pyplot as plt
 
 
 def plot_roc_curve(model, test_loader):
@@ -16,7 +17,8 @@ def plot_roc_curve(model, test_loader):
         test_loader: DataLoader containing test data
     """
     model.eval()
-    model.cuda()
+    if torch.cuda.is_available():
+        model.cuda()
     all_preds = []
     all_labels = []
 
@@ -76,7 +78,8 @@ def plot_roc_curve(model, test_loader):
     )
 
     # fig.show()
-    fig.write_html("roc_curve.html")
+    fig.write_html("mlp_roc_curve.html")
+    fig.write_image("mlp_roc_curve.png", width=800, height=600)
 
     # Print AUC score
     print(f"AUC Score: {roc_auc:.4f}")
@@ -156,7 +159,8 @@ def plot_losses(train_losses, val_losses):
 
     # Show the figure
     # fig.show()
-    fig.write_html("losses.html")
+    fig.write_html("mlp_losses.html")
+    fig.write_image("mlp_losses.png", width=800, height=600)
 
 
 def preprocess_data_for_pca(data, pca_type="protein"):
@@ -324,4 +328,122 @@ def plot_embedding_pca(data_dir, num_components=2, pca_type="protein"):
     fig.write_html(f"pca_{pca_type}.html")
 
 
+def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim=1):
+    """
+    Visualize a Multi-Layer Perceptron architecture using Plotly.
 
+    Args:
+        input_dim (int): Number of input neurons
+        hidden_dims (list): List of neurons in hidden layers
+        output_dim (int): Number of output neurons
+    """
+    # List all layers
+    all_layers = [input_dim] + hidden_dims + [output_dim]
+    n_layers = len(all_layers)
+
+    # Create node positions
+    node_x = []
+    node_y = []
+    node_color = []
+
+    # Colors for different layers
+    colors = ['rgb(255,153,255)', 'rgb(153,187,255)', 'rgb(153,187,255)',
+              'rgb(153,187,255)', 'rgb(187,255,187)']
+
+    # Create nodes for each layer
+    for i, n_neurons in enumerate(all_layers):
+        x = i * 2  # Horizontal spacing between layers
+
+        # Calculate vertical positions for neurons
+        if n_neurons == 1:
+            ys = [0]
+        else:
+            ys = np.linspace(-n_neurons / 2, n_neurons / 2, n_neurons)
+
+        # Add nodes
+        for j, y in enumerate(ys):
+            node_x.append(x)
+            node_y.append(y)
+            node_color.append(colors[i])
+
+    # Create edges (connections between layers)
+    edge_x = []
+    edge_y = []
+
+    # Connect each layer to the next
+    for i in range(n_layers - 1):
+        layer_size = all_layers[i]
+        next_layer_size = all_layers[i + 1]
+
+        # Get positions for current and next layer
+        current_ys = np.linspace(-layer_size / 2, layer_size / 2, layer_size)
+        next_ys = np.linspace(-next_layer_size / 2, next_layer_size / 2, next_layer_size)
+
+        # Connect each neuron to all neurons in next layer
+        for y1 in current_ys:
+            for y2 in next_ys:
+                edge_x.extend([i * 2, (i + 1) * 2, None])
+                edge_y.extend([y1, y2, None])
+
+    # Create the figure
+    fig = go.Figure()
+
+    # Add edges
+    fig.add_trace(go.Scatter(
+        x=edge_x,
+        y=edge_y,
+        mode='lines',
+        line=dict(color='rgb(210,210,210)', width=1),
+        hoverinfo='none'
+    ))
+
+    # Add nodes
+    fig.add_trace(go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode='markers',
+        marker=dict(
+            size=20,
+            color=node_color,
+            line=dict(color='rgb(50,50,50)', width=1)
+        ),
+    ))
+
+    # Add layer labels
+    annotations = []
+    for i, n_neurons in enumerate(all_layers):
+        label = f"Input Layer<br>({n_neurons})" if i == 0 else \
+            f"Output Layer<br>({n_neurons})" if i == len(all_layers) - 1 else \
+                f"Hidden Layer {i}<br>({n_neurons})<br>+ BatchNorm<br>+ ReLU<br>+ Dropout"
+
+        annotations.append(dict(
+            x=i * 2,
+            y=max(node_y) + 2,
+            xref="x",
+            yref="y",
+            text=label,
+            showarrow=False,
+            font=dict(size=12)
+        ))
+
+    # Update layout
+    fig.update_layout(
+        title="Multi-Layer Perceptron Architecture",
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=20, l=5, r=5, t=40),
+        annotations=annotations,
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor='white'
+    )
+
+    return fig
+
+
+# Create and show the visualization
+# fig = visualize_mlp_plotly()
+# fig.show()
+
+# To save the visualization as HTML
+# fig.write_html("mlp_architecture.html")
