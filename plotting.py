@@ -441,7 +441,7 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
     return fig
 
 
-def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, random_state=42, header="Protein"):
+def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, header="Protein"):
     """
     Creates an interactive UMAP visualization using Plotly.
 
@@ -464,17 +464,24 @@ def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, 
         n_neighbors=n_neighbors,
         min_dist=min_dist,
         n_components=2,
-        random_state=random_state
     )
 
     umap_embeddings = reducer.fit_transform(scaled_embeddings)
 
-    # Create a continuous color scale based on labels
-    colors = px.colors.sequential.Viridis
-
     # Create the scatter plot
     fig = go.Figure()
+    colors = px.colors.sequential.Viridis
 
+    if header == 'Protein':
+        bar = dict(
+            title=dict(
+                text="% of Disorder",
+                side="right",
+                font=dict(size=14)
+            )
+        )
+    else:
+        bar = None
     # Add points with a custom color scale
     fig.add_trace(go.Scatter(
         x=umap_embeddings[:, 0],
@@ -485,27 +492,15 @@ def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, 
             color=labels,
             colorscale=colors,
             showscale=True,
-            colorbar=dict(
-                title=dict(
-                    text="Label Value",
-                    side="right",
-                    font=dict(size=14)
-                )
-            ),
+            colorbar=bar,
             line=dict(width=1, color='rgba(255,255,255,0.8)'),
             opacity=0.8
         ),
-        hovertemplate='<b>Point %{pointNumber}</b><br>' +
-                      'UMAP-1: %{x:.2f}<br>' +
-                      'UMAP-2: %{y:.2f}<br>' +
-                      'Label: %{marker.color:.3f}<extra></extra>'
     ))
 
     # Update layout for a professional look
     fig.update_layout(
-        template='plotly_dark',
-        plot_bgcolor='rgba(0,0,0,0.95)',
-        paper_bgcolor='rgba(0,0,0,0.95)',
+        template='plotly_white',
         title=dict(
             text=f'UMAP Visualization of {header} Embeddings',
             x=0.5,
@@ -559,6 +554,6 @@ if __name__ == "__main__":
     # plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
     # plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
 
-    # create_umap_visualization(p_embeddings, p_labels)
+    create_umap_visualization(p_embeddings, p_labels)
     create_umap_visualization(a_embeddings, a_labels, header="Amino-Acids")
 
