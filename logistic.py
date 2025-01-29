@@ -44,7 +44,7 @@ def load_and_prepare_data(directory):
     # X = np.vstack(all_features)
     # y = np.concatenate(all_labels)
     X = np.vstack([t.cpu().numpy() for t in all_features])
-    y = np.concatenate([t.cpu().numpy() for t in all_features])
+    y = np.concatenate([t.cpu().numpy() for t in all_labels])
 
     return X, y, np.array(protein_ids)
 
