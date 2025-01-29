@@ -29,7 +29,7 @@ def load_and_prepare_data(directory):
         protein_data = torch.load(file_path)
 
         # Extract data
-        features = protein_data["rep"].numpy()
+        features = protein_data["rep"]#.numpy()
         labels = protein_data["labels"]
         prot_id = protein_data["id"]
 
@@ -139,7 +139,7 @@ def train_and_evaluate_single_split(X, y, protein_ids, test_size=0.2):
 
     # Save the plot
     plt.savefig('log_roc_curve.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    # plt.show()
 
     return {
         'accuracy': accuracy,
