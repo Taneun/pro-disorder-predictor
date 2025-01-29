@@ -77,10 +77,6 @@ def plot_roc_curve(model, test_loader):
         template='plotly_white'
     )
 
-    # fig.show()
-    fig.write_html("mlp_roc_curve.html")
-    fig.write_image("mlp_roc_curve.png", width=800, height=600)
-
     # Print AUC score
     print(f"AUC Score: {roc_auc:.4f}")
     # Calculate balanced accuracy
@@ -89,6 +85,10 @@ def plot_roc_curve(model, test_loader):
     best_threshold = np.argmax(balanced_accuracy)
     print(f"Best Threshold: {best_threshold}")
     print(f"Balanced Accuracy: {balanced_accuracy[best_threshold]:.4f}")
+
+    # fig.show()
+    fig.write_html("mlp_roc_curve.html")
+    fig.write_image("mlp_roc_curve.png", width=800, height=600)
 
 
 def plot_losses(train_losses, val_losses):
