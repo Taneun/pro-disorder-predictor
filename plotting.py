@@ -552,10 +552,13 @@ if __name__ == "__main__":
     data_dir = Path("post_embedding")
     protein_files = list(data_dir.glob("*.pt"))
     data = [torch.load(protein_file) for protein_file in protein_files]
+
     p_embeddings, p_labels = preprocess_data_for_pca(data, pca_type="protein")
-    plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
     a_embeddings, a_labels = preprocess_data_for_pca(data, pca_type="amino")
-    plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
+
+    # plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
+    # plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
+
     create_umap_visualization(p_embeddings, p_labels)
     create_umap_visualization(a_embeddings, a_labels, header="Amino Acids")
 
