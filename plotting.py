@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import plotly.graph_objects as go
 from sklearn.metrics import roc_curve, auc
@@ -6,6 +8,8 @@ from sklearn.decomposition import PCA
 import pandas as pd
 import plotly.express as px
 import matplotlib.pyplot as plt
+import umap
+from sklearn.preprocessing import StandardScaler
 
 
 def plot_roc_curve(model, test_loader):
@@ -219,7 +223,7 @@ def preprocess_data_for_pca(data, pca_type="protein"):
     return embeddings, labels
 
 
-def plot_embedding_pca(data_dir, num_components=2, pca_type="protein"):
+def plot_embedding_pca(embeddings, labels, num_components=2, pca_type="protein"):
     """
     Plots a PCA projection of high-dimensional embeddings using Plotly.
     Supports both protein-level and amino acid-level visualization.
@@ -232,11 +236,6 @@ def plot_embedding_pca(data_dir, num_components=2, pca_type="protein"):
         num_components (int): Number of PCA components to project onto (default=2).
         pca_type (str): Type of PCA to perform: "protein" or "amino" (default="protein").
     """
-    protein_files = list(data_dir.glob("*.pt"))
-    data = [torch.load(protein_file) for protein_file in protein_files]
-    # Get preprocessed data
-    embeddings, labels = preprocess_data_for_pca(data, pca_type=pca_type)
-
     # Perform PCA
     pca = PCA(n_components=num_components)
     pca_result = pca.fit_transform(embeddings)
@@ -326,6 +325,7 @@ def plot_embedding_pca(data_dir, num_components=2, pca_type="protein"):
     # Show plot
     # fig.show()
     fig.write_html(f"pca_{pca_type}.html")
+    fig.write_image(f"pca_{pca_type}.png", width=800, height=600)
 
 
 def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim=1):
@@ -441,9 +441,121 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
     return fig
 
 
-# Create and show the visualization
-# fig = visualize_mlp_plotly()
-# fig.show()
+def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, random_state=42, header="Protein"):
+    """
+    Creates an interactive UMAP visualization using Plotly.
 
-# To save the visualization as HTML
-# fig.write_html("mlp_architecture.html")
+    Args:
+        embeddings (np.array): Shape (n_samples, n_features)
+        labels (np.array): Shape (n_samples,)
+        n_neighbors (int): UMAP parameter for local neighborhood size
+        min_dist (float): UMAP parameter for minimum distance between points
+        random_state (int): Random seed for reproducibility
+
+    Returns:
+        plotly.graph_objects.Figure: Interactive UMAP visualization
+    """
+    # Scale the embeddings
+    scaler = StandardScaler()
+    scaled_embeddings = scaler.fit_transform(embeddings)
+
+    # Perform UMAP dimensionality reduction
+    reducer = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=2,
+        random_state=random_state
+    )
+
+    umap_embeddings = reducer.fit_transform(scaled_embeddings)
+
+    # Create a continuous color scale based on labels
+    colors = px.colors.sequential.Viridis
+
+    # Create the scatter plot
+    fig = go.Figure()
+
+    # Add points with a custom color scale
+    fig.add_trace(go.Scatter(
+        x=umap_embeddings[:, 0],
+        y=umap_embeddings[:, 1],
+        mode='markers',
+        marker=dict(
+            size=8,
+            color=labels,
+            colorscale=colors,
+            showscale=True,
+            colorbar=dict(
+                title=dict(
+                    text="Label Value",
+                    side="right",
+                    font=dict(size=14)
+                )
+            ),
+            line=dict(width=1, color='rgba(255,255,255,0.8)'),
+            opacity=0.8
+        ),
+        hovertemplate='<b>Point %{pointNumber}</b><br>' +
+                      'UMAP-1: %{x:.2f}<br>' +
+                      'UMAP-2: %{y:.2f}<br>' +
+                      'Label: %{marker.color:.3f}<extra></extra>'
+    ))
+
+    # Update layout for a professional look
+    fig.update_layout(
+        template='plotly_dark',
+        plot_bgcolor='rgba(0,0,0,0.95)',
+        paper_bgcolor='rgba(0,0,0,0.95)',
+        title=dict(
+            text=f'UMAP Visualization of {header} Embeddings',
+            x=0.5,
+            y=0.95,
+            font=dict(size=20, color='white')
+        ),
+        xaxis=dict(
+            title='UMAP-1',
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(255,255,255,0.3)',
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='UMAP-2',
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(255,255,255,0.3)',
+            zeroline=False
+        ),
+        showlegend=False,
+        width=1000,
+        height=800,
+        margin=dict(l=80, r=80, t=100, b=80)
+    )
+
+    # Add a subtle glow effect to points
+    fig.update_traces(
+        marker=dict(
+            size=8,
+            symbol='circle',
+            line=dict(width=1, color='rgba(255,255,255,0.5)'),
+            opacity=0.8
+        )
+    )
+
+    fig.write_image(f'{header}_umap.png', width=800, height=600)
+    return fig
+
+
+if __name__ == "__main__":
+    data_dir = Path("post_embedding")
+    protein_files = list(data_dir.glob("*.pt"))
+    data = [torch.load(protein_file) for protein_file in protein_files]
+    p_embeddings, p_labels = preprocess_data_for_pca(data, pca_type="protein")
+    plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
+    a_embeddings, a_labels = preprocess_data_for_pca(data, pca_type="amino")
+    plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
+    create_umap_visualization(p_embeddings, p_labels)
+    create_umap_visualization(a_embeddings, a_labels, header="Amino Acids")
+
