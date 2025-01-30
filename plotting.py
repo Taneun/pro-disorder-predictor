@@ -441,16 +441,16 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
     return fig
 
 
-def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, header="Protein"):
+def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, n_components=2):
     """
-    Creates an interactive UMAP visualization using Plotly.
+    Creates interactive 2D or 3D UMAP visualizations using Plotly.
 
     Args:
         embeddings (np.array): Shape (n_samples, n_features)
         labels (np.array): Shape (n_samples,)
         n_neighbors (int): UMAP parameter for local neighborhood size
         min_dist (float): UMAP parameter for minimum distance between points
-        random_state (int): Random seed for reproducibility
+        n_components (int): Number of components (2 or 3) for visualization
 
     Returns:
         plotly.graph_objects.Figure: Interactive UMAP visualization
@@ -463,97 +463,125 @@ def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, 
     reducer = umap.UMAP(
         n_neighbors=n_neighbors,
         min_dist=min_dist,
-        n_components=2,
+        n_components=n_components,
     )
 
     umap_embeddings = reducer.fit_transform(scaled_embeddings)
 
     # Create the scatter plot
     fig = go.Figure()
-    colors = px.colors.sequential.Viridis
 
-    if header == 'Protein':
-        bar = dict(
-            title=dict(
-                text="% of Disorder",
-                side="right",
-                font=dict(size=14)
-            )
-        )
-    else:
-        bar = None
-    # Add points with a custom color scale
-    fig.add_trace(go.Scatter(
-        x=umap_embeddings[:, 0],
-        y=umap_embeddings[:, 1],
-        mode='markers',
-        marker=dict(
-            size=8,
-            color=labels,
-            colorscale=colors,
-            showscale=True,
-            colorbar=bar,
-            line=dict(width=1, color='rgba(255,255,255,0.8)'),
-            opacity=0.8
-        ),
-    ))
+    # Define colors for each class
+    color_map = {0: 'rgb(0, 0, 77)',  # dark navy blue
+                 1: 'rgb(139, 0, 0)'}  # dark red
+
+    # Create label map for legend
+    label_map = {0: 'Regular', 1: 'Disordered'}
+
+    if n_components == 2:
+        # Create separate traces for each class for proper legend
+        for label_value in [0, 1]:
+            mask = labels == label_value
+            fig.add_trace(go.Scatter(
+                x=umap_embeddings[mask, 0],
+                y=umap_embeddings[mask, 1],
+                mode='markers',
+                name=label_map[label_value],
+                marker=dict(
+                    size=8,
+                    color=color_map[label_value],
+                    line=dict(width=1, color='rgba(255,255,255,0.8)'),
+                    opacity=0.8
+                ),
+            ))
+    else:  # 3D visualization
+        for label_value in [0, 1]:
+            mask = labels == label_value
+            fig.add_trace(go.Scatter3d(
+                x=umap_embeddings[mask, 0],
+                y=umap_embeddings[mask, 1],
+                z=umap_embeddings[mask, 2],
+                mode='markers',
+                name=label_map[label_value],
+                marker=dict(
+                    size=4,  # Smaller markers for 3D
+                    color=color_map[label_value],
+                    line=dict(width=0.2, color='grey'),
+                    opacity=0.8
+                ),
+            ))
 
     # Update layout for a professional look
-    fig.update_layout(
+    layout_args = dict(
         template='plotly_white',
         title=dict(
-            text=f'UMAP Visualization of {header} Embeddings',
+            text=f'{n_components}D UMAP Visualization of Amino Acids Embeddings',
             x=0.5,
-            y=0.95,
-            font=dict(size=20, color='white')
+            y=0.85,
+            font=dict(size=20)
         ),
-        xaxis=dict(
-            title='UMAP-1',
-            gridcolor='rgba(128,128,128,0.2)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(255,255,255,0.3)',
-            zeroline=False
-        ),
-        yaxis=dict(
-            title='UMAP-2',
-            gridcolor='rgba(128,128,128,0.2)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(255,255,255,0.3)',
-            zeroline=False
-        ),
-        showlegend=False,
+        showlegend=True,
         width=1000,
         height=800,
-        margin=dict(l=80, r=80, t=100, b=80)
+        margin=dict(l=80, r=80, t=100, b=80),
+        legend=dict(
+            title=dict(text="Label", side="top center"),
+            bordercolor="black",
+            borderwidth=0.5,
+            font=dict(size=16),
+            x=0.8,
+            y=0.8
+        ),
     )
 
-    # Add a subtle glow effect to points
-    fig.update_traces(
-        marker=dict(
-            size=8,
-            symbol='circle',
-            line=dict(width=1, color='rgba(255,255,255,0.5)'),
-            opacity=0.8
-        )
-    )
+    # Add axis configurations based on dimensions
+    if n_components == 2:
+        layout_args.update({
+            'xaxis': dict(
+                title='UMAP-1',
+                gridcolor='rgba(128,128,128,0.2)',
+                showline=True,
+                linewidth=1,
+                linecolor='rgba(0,0,0,0.3)',
+                zeroline=False
+            ),
+            'yaxis': dict(
+                title='UMAP-2',
+                gridcolor='rgba(128,128,128,0.2)',
+                showline=True,
+                linewidth=1,
+                linecolor='rgba(0,0,0,0.3)',
+                zeroline=False
+            )
+        })
+    else:
+        layout_args.update({
+            'scene': dict(
+                xaxis_title='UMAP-1',
+                yaxis_title='UMAP-2',
+                zaxis_title='UMAP-3',
+                xaxis=dict(gridcolor='rgba(128,128,128)', showgrid=True, showline=True),
+                yaxis=dict(gridcolor='rgba(128,128,128)', showgrid=True, showline=True),
+                zaxis=dict(gridcolor='rgba(128,128,128)', showgrid=True, showline=True)
+            )
+        })
 
-    fig.write_image(f'{header}_umap.png', width=800, height=600)
-    return fig
+    fig.update_layout(**layout_args)
+
+    fig.show()
 
 
 if __name__ == "__main__":
     data_dir = Path("post_embedding")
     protein_files = list(data_dir.glob("*.pt"))
-    data = [torch.load(protein_file) for protein_file in protein_files]
+    data = [torch.load(protein_file) for protein_file in protein_files[:25]]
 
-    p_embeddings, p_labels = preprocess_data_for_pca(data, pca_type="protein")
+    # p_embeddings, p_labels = preprocess_data_for_pca(data, pca_type="protein")
     a_embeddings, a_labels = preprocess_data_for_pca(data, pca_type="amino")
 
     # plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
     # plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
 
-    create_umap_visualization(p_embeddings, p_labels)
-    create_umap_visualization(a_embeddings, a_labels, header="Amino-Acids")
+    # create_umap_visualization(a_embeddings, a_labels, n_neighbors=15, min_dist=0.005)
+    create_umap_visualization(a_embeddings, a_labels, n_neighbors=50, min_dist=0.001, n_components=3)
 
