@@ -328,7 +328,7 @@ def plot_embedding_pca(embeddings, labels, num_components=2, pca_type="protein")
     fig.write_image(f"pca_{pca_type}.png", width=800, height=600)
 
 
-def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim=1):
+def visualize_mlp_plotly(input_dim=1280, hidden_dims=[192, 96, 64], output_dim=1):
     """
     Visualize a Multi-Layer Perceptron architecture using Plotly.
 
@@ -393,7 +393,7 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
         x=edge_x,
         y=edge_y,
         mode='lines',
-        line=dict(color='rgb(210,210,210)', width=1),
+        line=dict(color="black", width=0.1),
         hoverinfo='none'
     ))
 
@@ -403,7 +403,7 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
         y=node_y,
         mode='markers',
         marker=dict(
-            size=20,
+            size=18,
             color=node_color,
             line=dict(color='rgb(50,50,50)', width=1)
         ),
@@ -411,19 +411,26 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
 
     # Add layer labels
     annotations = []
+    labels = [
+        "Input Layer (1280)",
+        f"Hidden Layer 1<br>(192)<br>+ BatchNorm<br>+ ReLU<br>+ Dropout",
+        f"Hidden Layer 2<br>(96)<br>+ BatchNorm<br>+ ReLU<br>+ Dropout",
+        f"Hidden Layer 3<br>(64)<br>+ BatchNorm<br>+ ReLU<br>+ Dropout",
+        "Output (Sigmoid)"
+    ]
     for i, n_neurons in enumerate(all_layers):
-        label = f"Input Layer<br>({n_neurons})" if i == 0 else \
-            f"Output Layer<br>({n_neurons})" if i == len(all_layers) - 1 else \
-                f"Hidden Layer {i}<br>({n_neurons})<br>+ BatchNorm<br>+ ReLU<br>+ Dropout"
+        # label = f"Input Layer<br>({n_neurons})" if i == 0 else \
+        #     f"Output Layer<br>({n_neurons})" if i == len(all_layers) - 1 else \
+        #         f"Hidden Layer {i}<br>({n_neurons})<br>+ BatchNorm<br>+ ReLU<br>+ Dropout"
 
         annotations.append(dict(
             x=i * 2,
-            y=max(node_y) + 2,
+            y=max(node_y) + 10,
             xref="x",
             yref="y",
-            text=label,
+            text=labels[i],
             showarrow=False,
-            font=dict(size=12)
+            font=dict(size=14)
         ))
 
     # Update layout
@@ -438,7 +445,7 @@ def visualize_mlp_plotly(input_dim=1280, hidden_dims=[448, 224, 112], output_dim
         plot_bgcolor='white'
     )
 
-    return fig
+    fig.show()
 
 
 def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, n_components=2):
@@ -572,16 +579,18 @@ def create_umap_visualization(embeddings, labels, n_neighbors=15, min_dist=0.1, 
 
 
 if __name__ == "__main__":
-    data_dir = Path("post_embedding")
-    protein_files = list(data_dir.glob("*.pt"))
-    data = [torch.load(protein_file) for protein_file in protein_files[:25]]
+    # data_dir = Path("post_embedding")
+    # protein_files = list(data_dir.glob("*.pt"))
+    # data = [torch.load(protein_file) for protein_file in protein_files[:25]]
 
     # p_embeddings, p_labels = preprocess_data_for_pca(data, pca_type="protein")
-    a_embeddings, a_labels = preprocess_data_for_pca(data, pca_type="amino")
+    # a_embeddings, a_labels = preprocess_data_for_pca(data, pca_type="amino")
 
     # plot_embedding_pca(p_embeddings, p_labels, pca_type="protein")
     # plot_embedding_pca(a_embeddings, a_labels, pca_type="amino")
 
     # create_umap_visualization(a_embeddings, a_labels, n_neighbors=15, min_dist=0.005)
-    create_umap_visualization(a_embeddings, a_labels, n_neighbors=50, min_dist=0.001, n_components=3)
+    # create_umap_visualization(a_embeddings, a_labels, n_neighbors=50, min_dist=0.001, n_components=3)
+
+    visualize_mlp_plotly(128, [19,9,6])
 
